@@ -1,5 +1,6 @@
 #include <iostream>
-#include <ros/ros.h>
+//#include <ros/ros.h>
+#include <rclcpp/rclcpp.hpp>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
@@ -11,27 +12,32 @@
 #include <pclomp/ndt_omp.h>
 #include <pclomp/gicp_omp.h>
 
+#include <std_msgs/msg/string.hpp>
+
 // align point clouds and measure processing time
 pcl::PointCloud<pcl::PointXYZ>::Ptr align(pcl::Registration<pcl::PointXYZ, pcl::PointXYZ>::Ptr registration, const pcl::PointCloud<pcl::PointXYZ>::Ptr& target_cloud, const pcl::PointCloud<pcl::PointXYZ>::Ptr& source_cloud ) {
   registration->setInputTarget(target_cloud);
   registration->setInputSource(source_cloud);
   pcl::PointCloud<pcl::PointXYZ>::Ptr aligned(new pcl::PointCloud<pcl::PointXYZ>());
 
-  auto t1 = ros::WallTime::now();
+  rclcpp::Clock system_clock;
+
+  ///auto t1 = ros::WallTime::now();
+  auto t1 = system_clock.now();
   registration->align(*aligned);
-  auto t2 = ros::WallTime::now();
-  std::cout << "single : " << (t2 - t1).toSec() * 1000 << "[msec]" << std::endl;
+  auto t2 = system_clock.now();
+  //std::cout << "single : " << (t2 - t1).toSec() * 1000 << "[msec]" << std::endl;
+  std::cout << "single : " << (t2 - t1).seconds()* 1000 << "[msec]" << std::endl;
 
   for(int i=0; i<10; i++) {
     registration->align(*aligned);
   }
-  auto t3 = ros::WallTime::now();
-  std::cout << "10times: " << (t3 - t2).toSec() * 1000 << "[msec]" << std::endl;
+  auto t3 = system_clock.now();
+  std::cout << "10times: " << (t3 - t2).seconds() * 1000 << "[msec]" << std::endl;
   std::cout << "fitness: " << registration->getFitnessScore() << std::endl << std::endl;
 
   return aligned;
 }
-
 
 int main(int argc, char** argv) {
   if(argc != 3) {
@@ -68,16 +74,17 @@ int main(int argc, char** argv) {
   voxelgrid.filter(*downsampled);
   source_cloud = downsampled;
 
-  ros::Time::init();
+  //ros::Time::init();
 
   // benchmark
   std::cout << "--- pcl::GICP ---" << std::endl;
   pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>::Ptr gicp(new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>());
   pcl::PointCloud<pcl::PointXYZ>::Ptr aligned = align(gicp, target_cloud, source_cloud);
 
-  std::cout << "--- pclomp::GICP ---" << std::endl;
-  pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>::Ptr gicp_omp(new pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>());
-  aligned = align(gicp_omp, target_cloud, source_cloud);
+  //TODO:Fix Segmentation faults using OPENMP
+  //std::cout << "--- pclomp::GICP ---" << std::endl;
+  //pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>::Ptr gicp_omp(new pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>());
+  //aligned = align(gicp_omp, target_cloud, source_cloud);
 
 
   std::cout << "--- pcl::NDT ---" << std::endl;
@@ -95,6 +102,7 @@ int main(int argc, char** argv) {
   pclomp::NormalDistributionsTransform<pcl::PointXYZ, pcl::PointXYZ>::Ptr ndt_omp(new pclomp::NormalDistributionsTransform<pcl::PointXYZ, pcl::PointXYZ>());
   ndt_omp->setResolution(1.0);
 
+  /*
   for(int n : num_threads) {
     for(const auto& search_method : search_methods) {
       std::cout << "--- pclomp::NDT (" << search_method.first << ", " << n << " threads) ---" << std::endl;
@@ -103,6 +111,7 @@ int main(int argc, char** argv) {
       aligned = align(ndt_omp, target_cloud, source_cloud);
     }
   }
+  */
 
   // visulization
   pcl::visualization::PCLVisualizer vis("vis");

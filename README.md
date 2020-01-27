@@ -1,47 +1,16 @@
-# ndt_omp
+# ndt_omp_ros2
 This package provides an OpenMP-boosted Normal Distributions Transform (and GICP) algorithm derived from pcl. The NDT algorithm is modified to be SSE-friendly and multi-threaded. It can run up to 10 times faster than its original version in pcl.
 
-### Benchmark (on Core i7-6700K)
+### Benchmark
 ```
-$ roscd ndt_omp/data
-$ rosrun ndt_omp align 251370668.pcd 251371071.pcd
+$ cd ~/ros2_ws/src/ndt_omp/data
+$ ~/ros2_ws/install/ndt_omp_ros2/lib/ndt_omp/align 251370668.pcd 251371071.pcd
+--- pcl::GICP ---
+single : 253.065[msec]
+10times: 1247.27[msec]
+fitness: 0.220291
+
 --- pcl::NDT ---
-single : 282.222[msec]
-10times: 2921.92[msec]
-fitness: 0.213937
-
---- pclomp::NDT (KDTREE, 1 threads) ---
-single : 207.697[msec]
-10times: 2059.19[msec]
-fitness: 0.213937
-
---- pclomp::NDT (DIRECT7, 1 threads) ---
-single : 139.433[msec]
-10times: 1356.79[msec]
-fitness: 0.214205
-
---- pclomp::NDT (DIRECT1, 1 threads) ---
-single : 34.6418[msec]
-10times: 317.03[msec]
-fitness: 0.208511
-
---- pclomp::NDT (KDTREE, 8 threads) ---
-single : 54.9903[msec]
-10times: 500.51[msec]
-fitness: 0.213937
-
---- pclomp::NDT (DIRECT7, 8 threads) ---
-single : 63.1442[msec]
-10times: 343.336[msec]
-fitness: 0.214205
-
---- pclomp::NDT (DIRECT1, 8 threads) ---
-single : 17.2353[msec]
-10times: 100.025[msec]
-fitness: 0.208511
-```
-
-Several methods for neighbor voxel search are implemented. If you select pclomp::KDTREE, results will be completely same as the original pcl::NDT. We recommend to use pclomp::DIRECT7 which is faster and stable. If you need extremely fast registration, choose pclomp::DIRECT1, but it might be a bit unstable.
-
-<img src="data/screenshot.png" height="400pix" /><br>
-Red: target, Green: source, Blue: aligned
+single : 111.041[msec]
+10times: 1082.99[msec]
+fitness: 0.246716
