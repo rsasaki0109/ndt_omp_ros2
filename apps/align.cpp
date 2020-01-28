@@ -81,10 +81,10 @@ int main(int argc, char** argv) {
   pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>::Ptr gicp(new pcl::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>());
   pcl::PointCloud<pcl::PointXYZ>::Ptr aligned = align(gicp, target_cloud, source_cloud);
 
-  //TODO:Fix Segmentation faults using OPENMP
-  //std::cout << "--- pclomp::GICP ---" << std::endl;
-  //pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>::Ptr gicp_omp(new pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>());
-  //aligned = align(gicp_omp, target_cloud, source_cloud);
+  //TODO:The problem of uninitialized member variables
+  std::cout << "--- pclomp::GICP ---" << std::endl;
+  pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>::Ptr gicp_omp(new pclomp::GeneralizedIterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ>());
+  aligned = align(gicp_omp, target_cloud, source_cloud);
 
 
   std::cout << "--- pcl::NDT ---" << std::endl;
