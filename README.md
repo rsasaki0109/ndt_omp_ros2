@@ -3,7 +3,7 @@ This package provides an OpenMP-boosted Normal Distributions Transform (and GICP
 
 ### Benchmark
 ```
-$ cd ~/ros2_ws/src/ndt_omp/data
+$ cd ~/ros2_ws/src/ndt_omp_ros2/data
 $ ~/ros2_ws/install/ndt_omp_ros2/lib/ndt_omp/align 251370668.pcd 251371071.pcd
 --- pcl::GICP ---
 single : 253.065[msec]
