@@ -2,8 +2,12 @@ cmake_minimum_required(VERSION 3.5)
 project(ndt_omp_ros2)
 
 # -mavx causes a lot of errors!!
-add_definitions(-std=c++14 -msse -msse2 -msse3 -msse4 -msse4.1 -msse4.2)
-set(CMAKE_CXX_FLAGS "-std=c++14 -msse -msse2 -msse3 -msse4 -msse4.1 -msse4.2")
+#add_definitions(-std=c++14 -msse -msse2 -msse3 -msse4 -msse4.1 -msse4.2)
+#set(CMAKE_CXX_FLAGS "-std=c++14 -msse -msse2 -msse3 -msse4 -msse4.1 -msse4.2")
+
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 14)
+endif()
 
 # pcl 1.7 causes a segfault when it is built with debug mode
 set(CMAKE_BUILD_TYPE "RELEASE")
@@ -71,12 +75,12 @@ ament_target_dependencies(align
 
 install(TARGETS 
   align
-  DESTINATION lib/ndt_omp
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 install(
   TARGETS
-    ndt_omp
+    align
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin

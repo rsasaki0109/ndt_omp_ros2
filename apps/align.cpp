@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
   pclomp::NormalDistributionsTransform<pcl::PointXYZ, pcl::PointXYZ>::Ptr ndt_omp(new pclomp::NormalDistributionsTransform<pcl::PointXYZ, pcl::PointXYZ>());
   ndt_omp->setResolution(1.0);
 
-  /*
+  
   for(int n : num_threads) {
     for(const auto& search_method : search_methods) {
       std::cout << "--- pclomp::NDT (" << search_method.first << ", " << n << " threads) ---" << std::endl;
@@ -111,7 +111,7 @@ int main(int argc, char** argv) {
       aligned = align(ndt_omp, target_cloud, source_cloud);
     }
   }
-  */
+  
 
   // visulization
   pcl::visualization::PCLVisualizer vis("vis");
