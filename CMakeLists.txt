@@ -67,7 +67,8 @@ target_link_libraries(align
 )
 
 ament_target_dependencies(align
-  rclcpp ndt_omp)
+  rclcpp
+)
 
 ############
 ## INSTAL ##
