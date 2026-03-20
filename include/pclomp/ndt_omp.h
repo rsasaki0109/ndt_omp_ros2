@@ -45,6 +45,7 @@
 #include <pcl/search/impl/search.hpp>
 #include "voxel_grid_covariance_omp.h"
 
+#include <atomic>
 #include <unsupported/Eigen/NonLinearOptimization>
 
 namespace pclomp
@@ -490,8 +491,76 @@ namespace pclomp
 
     int num_threads_;
 
+    // Adaptive correspondence distance threshold
+    // Inspired by KISS-ICP (Vizzo et al., RAL 2023, MIT License)
+    double max_correspondence_distance_;  // 0 = no limit
+    mutable std::atomic<double> last_mean_correspondence_distance_;
+    mutable std::atomic<int> last_correspondence_count_;
+
+    // IMU rotation prior
+    bool has_rotation_prior_;
+    Eigen::Vector3d rotation_prior_rpy_;  // [roll, pitch, yaw] target
+    double rotation_prior_weight_;        // lambda
+    bool rotation_prior_roll_pitch_only_; // only constrain roll/pitch (not yaw)
+
+    // Translation prior (e.g., IMU gravity-constrained z-axis)
+    bool has_translation_prior_;
+    Eigen::Vector3d translation_prior_xyz_;
+    Eigen::Vector3d translation_prior_weights_;  // per-axis weights [wx, wy, wz]
+
 	public:
 		NeighborSearchMethod search_method;
+
+    /** \brief Set a rotation prior for the optimization.
+      * \param[in] prior_rpy target rotation as [roll, pitch, yaw] in radians
+      * \param[in] weight regularization weight (lambda)
+      * \param[in] roll_pitch_only if true, only constrain roll and pitch
+      */
+    inline void setRotationPrior(const Eigen::Vector3d& prior_rpy, double weight, bool roll_pitch_only = true) {
+      rotation_prior_rpy_ = prior_rpy;
+      rotation_prior_weight_ = weight;
+      rotation_prior_roll_pitch_only_ = roll_pitch_only;
+      has_rotation_prior_ = true;
+    }
+
+    /** \brief Clear the rotation prior. */
+    inline void clearRotationPrior() {
+      has_rotation_prior_ = false;
+      rotation_prior_weight_ = 0.0;
+    }
+
+    /** \brief Set maximum correspondence distance for outlier rejection.
+      * Points whose distance to the nearest voxel mean exceeds this are skipped.
+      * Set to 0 to disable (default).
+      * Inspired by KISS-ICP adaptive threshold (Vizzo et al., RAL 2023, MIT License).
+      */
+    inline void setMaxCorrespondenceDistance(double dist) {
+      max_correspondence_distance_ = dist;
+    }
+
+    /** \brief Get mean correspondence distance from last alignment. */
+    inline double getLastMeanCorrespondenceDistance() const {
+      int count = last_correspondence_count_.load();
+      if (count == 0) return 0.0;
+      return last_mean_correspondence_distance_.load() / count;
+    }
+
+    /** \brief Set a translation prior for the optimization.
+      * \param[in] prior_xyz target translation [x, y, z]
+      * \param[in] weights per-axis regularization weights [wx, wy, wz]
+      *   Use wz > 0, wx = wy = 0 for gravity-only z-constraint.
+      */
+    inline void setTranslationPrior(const Eigen::Vector3d& prior_xyz, const Eigen::Vector3d& weights) {
+      translation_prior_xyz_ = prior_xyz;
+      translation_prior_weights_ = weights;
+      has_translation_prior_ = true;
+    }
+
+    /** \brief Clear the translation prior. */
+    inline void clearTranslationPrior() {
+      has_translation_prior_ = false;
+      translation_prior_weights_ = Eigen::Vector3d::Zero();
+    }
 
 		EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 	};

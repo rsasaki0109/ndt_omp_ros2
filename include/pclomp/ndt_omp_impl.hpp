@@ -73,6 +73,19 @@ pclomp::NormalDistributionsTransform<PointSource, PointTarget>::NormalDistributi
 
   search_method = DIRECT7;
   num_threads_ = omp_get_max_threads();
+
+  has_rotation_prior_ = false;
+  rotation_prior_rpy_ = Eigen::Vector3d::Zero();
+  rotation_prior_weight_ = 0.0;
+  rotation_prior_roll_pitch_only_ = true;
+
+  max_correspondence_distance_ = 0.0;
+  last_mean_correspondence_distance_.store(0.0);
+  last_correspondence_count_.store(0);
+
+  has_translation_prior_ = false;
+  translation_prior_xyz_ = Eigen::Vector3d::Zero();
+  translation_prior_weights_ = Eigen::Vector3d::Zero();
 }
 
 
@@ -187,9 +200,15 @@ pclomp::NormalDistributionsTransform<PointSource, PointTarget>::computeDerivativ
 	hessian.setZero();
 	double score = 0;
 
+  // Reset correspondence statistics
+  last_mean_correspondence_distance_.store(0.0);
+  last_correspondence_count_.store(0);
+
   std::vector<double> scores(num_threads_);
   std::vector<Eigen::Matrix<double, 6, 1>, Eigen::aligned_allocator<Eigen::Matrix<double, 6, 1>>> score_gradients(num_threads_);
   std::vector<Eigen::Matrix<double, 6, 6>, Eigen::aligned_allocator<Eigen::Matrix<double, 6, 6>>> hessians(num_threads_);
+  std::vector<double> corr_dist_sums(num_threads_, 0.0);
+  std::vector<int> corr_counts(num_threads_, 0);
   for (int i = 0; i < num_threads_; i++) {
 		scores[i] = 0;
 		score_gradients[i].setZero();
@@ -260,6 +279,15 @@ pclomp::NormalDistributionsTransform<PointSource, PointTarget>::computeDerivativ
 
 			// Denorm point, x_k' in Equations 6.12 and 6.13 [Magnusson 2009]
 			x_trans -= cell->getMean();
+
+			// Adaptive correspondence distance threshold (KISS-ICP inspired)
+			double corr_dist = x_trans.norm();
+			if (max_correspondence_distance_ > 0.0 && corr_dist > max_correspondence_distance_) {
+				continue;  // Skip outlier correspondences
+			}
+			corr_dist_sums[thread_n] += corr_dist;
+			corr_counts[thread_n]++;
+
 			// Uses precomputed covariance for speed.
 			c_inv = cell->getInverseCov();
 
@@ -274,10 +302,51 @@ pclomp::NormalDistributionsTransform<PointSource, PointTarget>::computeDerivativ
 		hessians[thread_n].noalias() += hessian_pt;
 	}
 
+  double total_corr_dist = 0.0;
+  int total_corr_count = 0;
   for (int i = 0; i < num_threads_; i++) {
 		score += scores[i];
 		score_gradient += score_gradients[i];
 		hessian += hessians[i];
+		total_corr_dist += corr_dist_sums[i];
+		total_corr_count += corr_counts[i];
+	}
+  last_mean_correspondence_distance_.store(total_corr_dist);
+  last_correspondence_count_.store(total_corr_count);
+
+	// IMU rotation prior: adds quadratic penalty pulling rotation toward prior
+	// p = [tx, ty, tz, roll, pitch, yaw], indices 3,4,5 are rotation
+	// NDT maximizes score (more negative = worse), so prior adds negative penalty
+	if (has_rotation_prior_ && rotation_prior_weight_ > 0.0) {
+		const int start_idx = 3;
+		const int end_idx = rotation_prior_roll_pitch_only_ ? 5 : 6;
+		for (int i = start_idx; i < end_idx; i++) {
+			double diff = p(i) - rotation_prior_rpy_(i - 3);
+			// Wrap angle difference to [-pi, pi]
+			while (diff > M_PI) diff -= 2.0 * M_PI;
+			while (diff < -M_PI) diff += 2.0 * M_PI;
+			// Quadratic penalty (negative because NDT maximizes score)
+			score -= rotation_prior_weight_ * diff * diff;
+			score_gradient(i) -= 2.0 * rotation_prior_weight_ * diff;
+			if (compute_hessian) {
+				hessian(i, i) -= 2.0 * rotation_prior_weight_;
+			}
+		}
+	}
+
+	// Translation prior: quadratic penalty pulling translation toward prior
+	// p = [tx, ty, tz, roll, pitch, yaw], indices 0,1,2 are translation
+	if (has_translation_prior_) {
+		for (int i = 0; i < 3; i++) {
+			if (translation_prior_weights_(i) > 0.0) {
+				double diff = p(i) - translation_prior_xyz_(i);
+				score -= translation_prior_weights_(i) * diff * diff;
+				score_gradient(i) -= 2.0 * translation_prior_weights_(i) * diff;
+				if (compute_hessian) {
+					hessian(i, i) -= 2.0 * translation_prior_weights_(i);
+				}
+			}
+		}
 	}
 
 	return (score);
