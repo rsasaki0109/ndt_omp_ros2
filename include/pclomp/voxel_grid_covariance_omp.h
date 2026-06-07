@@ -38,7 +38,6 @@
 #ifndef PCL_VOXEL_GRID_COVARIANCE_OMP_H_
 #define PCL_VOXEL_GRID_COVARIANCE_OMP_H_
 
-// #include <boost/shared_ptr.hpp>
 #include <pcl/filters/voxel_grid.h>
 #include <map>
 #include <unordered_map>
