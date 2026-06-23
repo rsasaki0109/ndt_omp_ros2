@@ -111,6 +111,8 @@ namespace pclomp
         , rotation_epsilon_(2e-3)
         , mahalanobis_(0)
         , max_inner_iterations_(20)
+        , translation_gradient_tolerance_(1e-2)
+        , rotation_gradient_tolerance_(1e-2)
       {
         min_number_correspondences_ = 4;
         reg_name_ = "GeneralizedIterativeClosestPoint";
@@ -251,6 +253,25 @@ namespace pclomp
       int
       getMaximumOptimizerIterations () { return (max_inner_iterations_); }
 
+      /** set the GICP epsilon (regularization) constant
+        * for sparse maps, use larger values (e.g., 0.01~0.05) to prevent singular covariance
+        * \param[in] epsilon regularization constant
+        */
+      void
+      setGICPEpsilon (double epsilon) { gicp_epsilon_ = epsilon; }
+
+      /** set gradient tolerance for convergence checking
+        * \param[in] tolerance translation gradient tolerance
+        */
+      void
+      setTranslationGradientTolerance (double tolerance) { translation_gradient_tolerance_ = tolerance; }
+
+      /** set gradient tolerance for convergence checking  
+        * \param[in] tolerance rotation gradient tolerance
+        */
+      void
+      setRotationGradientTolerance (double tolerance) { rotation_gradient_tolerance_ = tolerance; }
+
     protected:
 
       /** \brief The number of neighbors used for covariances computation.
@@ -269,6 +290,16 @@ namespace pclomp
         * default: 2e-3
         */
       double rotation_epsilon_;
+
+      /** \brief Tolerance for translation gradient convergence check.
+        * default: 1e-2
+        */
+      double translation_gradient_tolerance_;
+
+      /** \brief Tolerance for rotation gradient convergence check.
+        * default: 1e-2
+        */
+      double rotation_gradient_tolerance_;
 
       /** \brief base transformation */
       Eigen::Matrix4f base_transformation_;
@@ -357,6 +388,18 @@ namespace pclomp
         double operator() (const Vector6d& x) override;
         void  df(const Vector6d &x, Vector6d &df) override;
         void fdf(const Vector6d &x, double &f, Vector6d &df) override;
+        BFGSSpace::Status checkGradient(const Vector6d& g) override
+        {
+          auto translation_epsilon = gicp_->translation_gradient_tolerance_;
+          auto rotation_epsilon = gicp_->rotation_gradient_tolerance_;
+          if ((translation_epsilon < 0.) || (rotation_epsilon < 0.))
+            return BFGSSpace::NegativeGradientEpsilon;
+          auto translation_grad = g.head<3>().norm();
+          auto rotation_grad = g.tail<3>().norm();
+          if ((translation_grad < translation_epsilon) && (rotation_grad < rotation_epsilon))
+            return BFGSSpace::Success;
+          return BFGSSpace::Running;
+        }
 
         const GeneralizedIterativeClosestPoint *gicp_;
       };

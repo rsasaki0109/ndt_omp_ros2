@@ -217,16 +217,27 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigi
 
   int inner_iterations_ = 0;
   int result = bfgs.minimizeInit (x);
+  
+  // Debug: check if cost/gradient is NaN
+  double init_f = 0;
+  Vector6d init_g = Vector6d::Zero();
+  functor.fdf(x, init_f, init_g);
+  fprintf(stderr, "[GICP_BFGS_INIT] n_correspondences=%zu init_f=%.6e g0=%.3e g1=%.3e g2=%.3e\n",
+    indices_src.size(), init_f, init_g(0), init_g(1), init_g(2));
+  
   result = BFGSSpace::Running;
   do
   {
     inner_iterations_++;
     result = bfgs.minimizeOneStep (x);
+    fprintf(stderr, "[GICP_BFGS_STEP] minimizeOneStep iter=%d returned code=%d\n",
+      inner_iterations_, result);
     if(result)
     {
       break;
     }
     result = bfgs.testGradient();
+    fprintf(stderr, "[GICP_BFGS_STEP] testGradient returned code=%d\n", result);
   } while(result == BFGSSpace::Running && inner_iterations_ < max_inner_iterations_);
   if(result == BFGSSpace::NoProgress || result == BFGSSpace::Success || inner_iterations_ == max_inner_iterations_)
   {
@@ -236,8 +247,12 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigi
     applyState(transformation_matrix, x);
   }
   else
+  {
+    fprintf(stderr, "[GICP_BFGS_FAIL] BFGS exited with code=%d (0=Running,1=Gradient,2=StepFailed,3=Failed,4=Success,5=NoProgress) inner_iter=%d max_inner=%d\n",
+      result, inner_iterations_, max_inner_iterations_);
     PCL_THROW_EXCEPTION(pcl::SolverDidntConvergeException,
                         "[pcl::" << getClassName () << "::TransformationEstimationBFGS::estimateRigidTransformation] BFGS solver didn't converge!");
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -446,6 +461,13 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
         // temp = M*R' + C2 = R*C1*R' + C2
         Eigen::Matrix3d temp = M * R.transpose();
         temp+= C2;
+
+        // Add Tikhonov regularization to prevent singular matrix inversion
+        // on sparse/downsampled maps where local covariance may be degenerate.
+        // gicp_epsilon_ controls the regularization strength (0.001~0.01 recommended)
+        Eigen::Matrix3d regularization = Eigen::Matrix3d::Identity() * gicp_epsilon_;
+        temp += regularization;
+
         // M = temp^-1
         M = temp.inverse ();
 		M_.block<3, 3>(0, 0) = M.cast<float>();
@@ -494,6 +516,7 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
     catch (pcl::PCLException &e)
     {
       PCL_DEBUG ("[pcl::%s::computeTransformation] Optimization issue %s\n", getClassName ().c_str (), e.what ());
+      fprintf(stderr, "[GICP_BFGS_EXCEPTION] Optimization failed: %s\n", e.what());
       break;
     }
     nr_iterations_++;
@@ -504,9 +527,13 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
       previous_transformation_ = transformation_;
       PCL_DEBUG ("[pcl::%s::computeTransformation] Convergence reached. Number of iterations: %d out of %d. Transformation difference: %f\n",
                  getClassName ().c_str (), nr_iterations_, max_iterations_, (transformation_ - previous_transformation_).array ().abs ().sum ());
+      fprintf(stderr, "[GICP_DIAG] Convergence reached: nr_iter=%d max_iter=%d delta=%f\n", nr_iterations_, max_iterations_, delta);
     }
     else
+    {
       PCL_DEBUG ("[pcl::%s::computeTransformation] Convergence failed\n", getClassName ().c_str ());
+      fprintf(stderr, "[GICP_DIAG] Convergence NOT reached: nr_iter=%d max_iter=%d delta=%f\n", nr_iterations_, max_iterations_, delta);
+    }
   }
   final_transformation_ = previous_transformation_ * guess;
 
