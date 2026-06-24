@@ -236,8 +236,10 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigi
     applyState(transformation_matrix, x);
   }
   else
+  {
     PCL_THROW_EXCEPTION(pcl::SolverDidntConvergeException,
                         "[pcl::" << getClassName () << "::TransformationEstimationBFGS::estimateRigidTransformation] BFGS solver didn't converge!");
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -446,6 +448,13 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
         // temp = M*R' + C2 = R*C1*R' + C2
         Eigen::Matrix3d temp = M * R.transpose();
         temp+= C2;
+
+        // Add Tikhonov regularization to prevent singular matrix inversion
+        // on sparse/downsampled maps where local covariance may be degenerate.
+        // gicp_epsilon_ controls the regularization strength (0.001~0.01 recommended)
+        Eigen::Matrix3d regularization = Eigen::Matrix3d::Identity() * gicp_epsilon_;
+        temp += regularization;
+
         // M = temp^-1
         M = temp.inverse ();
 		M_.block<3, 3>(0, 0) = M.cast<float>();
@@ -506,7 +515,9 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
                  getClassName ().c_str (), nr_iterations_, max_iterations_, (transformation_ - previous_transformation_).array ().abs ().sum ());
     }
     else
+    {
       PCL_DEBUG ("[pcl::%s::computeTransformation] Convergence failed\n", getClassName ().c_str ());
+    }
   }
   final_transformation_ = previous_transformation_ * guess;
 
