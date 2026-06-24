@@ -83,6 +83,14 @@ install(TARGETS
 
 install(
   TARGETS
+    ndt_omp
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+install(
+  TARGETS
     align
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
