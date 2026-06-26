@@ -109,10 +109,10 @@ namespace pclomp
         : k_correspondences_(20)
         , gicp_epsilon_(0.001)
         , rotation_epsilon_(2e-3)
-        , mahalanobis_(0)
-        , max_inner_iterations_(20)
         , translation_gradient_tolerance_(1e-2)
         , rotation_gradient_tolerance_(1e-2)
+        , mahalanobis_(0)
+        , max_inner_iterations_(20)
       {
         min_number_correspondences_ = 4;
         reg_name_ = "GeneralizedIterativeClosestPoint";
