@@ -41,6 +41,7 @@
 #define PCL_REGISTRATION_IMPL_GICP_OMP_HPP_
 
 #include <atomic>
+#include <cmath>
 #include <boost/shared_ptr.hpp>
 #include <pcl/registration/exceptions.h>
 
@@ -70,6 +71,13 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeCovar
     auto& nn_dist_sq = nn_dist_sq_array[omp_get_thread_num()];
 
     const PointT &query_point = cloud->at(i);
+
+    // 跳过NaN/Inf点，避免KDTree assertion崩溃
+    if (!std::isfinite(query_point.x) || !std::isfinite(query_point.y) || !std::isfinite(query_point.z)) {
+      cloud_covariances[i].setIdentity();
+      continue;
+    }
+
     Eigen::Vector3d mean = Eigen::Vector3d::Zero();
     Eigen::Matrix3d &cov = cloud_covariances[i];
     // Zero out the cov and mean
@@ -196,7 +204,7 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigi
   x[1] = transformation_matrix (1,3);
   x[2] = transformation_matrix (2,3);
   x[3] = std::atan2 (transformation_matrix (2,1), transformation_matrix (2,2));
-  x[4] = asin (-transformation_matrix (2,0));
+  x[4] = asin (std::clamp (static_cast<double>(-transformation_matrix (2,0)), -1.0, 1.0));
   x[5] = std::atan2 (transformation_matrix (1,0), transformation_matrix (0,0));
 
   // Set temporary pointers
@@ -428,6 +436,11 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
       PointSource query = output[i];
       query.getVector4fMap () = transformation_ * query.getVector4fMap ();
 
+      // 跳过NaN/Inf点，避免KDTree assertion崩溃
+      if (!std::isfinite(query.x) || !std::isfinite(query.y) || !std::isfinite(query.z)) {
+        continue;
+      }
+
       if (!searchForNeighbors (query, nn_indices, nn_dists))
       {
         PCL_ERROR ("[pcl::%s::computeTransformation] Unable to find a nearest neighbor in the target dataset for point %d in the source!\n", getClassName ().c_str (), (*indices_)[i]);
@@ -485,6 +498,11 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
     try
     {
       rigid_transformation_estimation_(output, source_indices, *target_, target_indices, transformation_);
+      // If the optimizer produced NaN/Inf, revert to previous and abort
+      if (!transformation_.allFinite()) {
+        transformation_ = previous_transformation_;
+        break;
+      }
       /* compute the delta from this iteration */
       delta = 0.;
       for(int k = 0; k < 4; k++) {

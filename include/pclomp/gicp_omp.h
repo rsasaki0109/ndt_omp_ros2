@@ -44,6 +44,8 @@
 #include <pcl/registration/icp.h>
 #include <pcl/registration/bfgs.h>
 #include <boost/shared_ptr.hpp>
+#include <cmath>
+#include <algorithm>
 
 namespace pclomp
 {
@@ -371,6 +373,10 @@ namespace pclomp
       inline bool
       searchForNeighbors (const PointSource &query, std::vector<int>& index, std::vector<float>& distance) const
       {
+        // 检查查询点是否有效，避免KDTree assertion崩溃
+        if (!std::isfinite(query.x) || !std::isfinite(query.y) || !std::isfinite(query.z)) {
+          return false;
+        }
         int k = tree_->nearestKSearch (query, 1, index, distance);
         if (k == 0)
           return (false);
