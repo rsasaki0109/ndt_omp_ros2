@@ -204,7 +204,7 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigi
   x[1] = transformation_matrix (1,3);
   x[2] = transformation_matrix (2,3);
   x[3] = std::atan2 (transformation_matrix (2,1), transformation_matrix (2,2));
-  x[4] = asin (std::clamp (static_cast<double>(-transformation_matrix (2,0)), -1.0, 1.0));
+  x[4] = asin (std::min (1.0, std::max (-1.0, static_cast<double>(-transformation_matrix (2,0)))));
   x[5] = std::atan2 (transformation_matrix (1,0), transformation_matrix (0,0));
 
   // Set temporary pointers
