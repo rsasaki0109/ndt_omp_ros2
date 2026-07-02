@@ -41,6 +41,7 @@
 #define PCL_REGISTRATION_IMPL_GICP_OMP_HPP_
 
 #include <atomic>
+#include <cmath>
 #include <boost/shared_ptr.hpp>
 #include <pcl/registration/exceptions.h>
 
@@ -65,11 +66,18 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeCovar
   std::vector<std::vector<float>> nn_dist_sq_array(omp_get_max_threads());
 
   #pragma omp parallel for
-  for(int i=0; i<cloud->size(); i++) {
+  for(int i=0; i<static_cast<int>(cloud->size()); i++) {
     auto& nn_indecies = nn_indecies_array[omp_get_thread_num()];
     auto& nn_dist_sq = nn_dist_sq_array[omp_get_thread_num()];
 
     const PointT &query_point = cloud->at(i);
+
+    // 跳过NaN/Inf点，避免KDTree assertion崩溃
+    if (!std::isfinite(query_point.x) || !std::isfinite(query_point.y) || !std::isfinite(query_point.z)) {
+      cloud_covariances[i].setIdentity();
+      continue;
+    }
+
     Eigen::Vector3d mean = Eigen::Vector3d::Zero();
     Eigen::Matrix3d &cov = cloud_covariances[i];
     // Zero out the cov and mean
@@ -196,7 +204,7 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigi
   x[1] = transformation_matrix (1,3);
   x[2] = transformation_matrix (2,3);
   x[3] = std::atan2 (transformation_matrix (2,1), transformation_matrix (2,2));
-  x[4] = asin (-transformation_matrix (2,0));
+  x[4] = asin (std::min (1.0, std::max (-1.0, static_cast<double>(-transformation_matrix (2,0)))));
   x[5] = std::atan2 (transformation_matrix (1,0), transformation_matrix (0,0));
 
   // Set temporary pointers
@@ -236,8 +244,10 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigi
     applyState(transformation_matrix, x);
   }
   else
+  {
     PCL_THROW_EXCEPTION(pcl::SolverDidntConvergeException,
                         "[pcl::" << getClassName () << "::TransformationEstimationBFGS::estimateRigidTransformation] BFGS solver didn't converge!");
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -283,7 +293,7 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::Optimization
   std::vector<Eigen::Matrix4d, Eigen::aligned_allocator<Eigen::Matrix4d>> R_array(omp_get_max_threads());
   std::vector<Eigen::Vector4d, Eigen::aligned_allocator<Eigen::Vector4d>> g_array(omp_get_max_threads());
 
-  for (int i = 0; i < R_array.size(); i++) {
+  for (int i = 0; i < static_cast<int>(R_array.size()); i++) {
 	  R_array[i].setZero();
 	  g_array[i].setZero();
   }
@@ -317,7 +327,7 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::Optimization
 
   g.setZero();
   Eigen::Matrix4d R = Eigen::Matrix4d::Zero();
-  for (int i = 0; i < R_array.size(); i++) {
+  for (int i = 0; i < static_cast<int>(R_array.size()); i++) {
 	  R += R_array[i];
 	  g.head<3>() += g_array[i].head<3>();
   }
@@ -418,13 +428,18 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
     const Eigen::Matrix3d R = transform_R.topLeftCorner<3,3> ();
 
     #pragma omp parallel for
-    for (int i = 0; i < N; i++)
+    for (int i = 0; i < static_cast<int>(N); i++)
     {
       auto& nn_indices = nn_indices_array[omp_get_thread_num()];
       auto& nn_dists = nn_dists_array[omp_get_thread_num()];
 
       PointSource query = output[i];
       query.getVector4fMap () = transformation_ * query.getVector4fMap ();
+
+      // 跳过NaN/Inf点，避免KDTree assertion崩溃
+      if (!std::isfinite(query.x) || !std::isfinite(query.y) || !std::isfinite(query.z)) {
+        continue;
+      }
 
       if (!searchForNeighbors (query, nn_indices, nn_dists))
       {
@@ -446,6 +461,13 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
         // temp = M*R' + C2 = R*C1*R' + C2
         Eigen::Matrix3d temp = M * R.transpose();
         temp+= C2;
+
+        // Add Tikhonov regularization to prevent singular matrix inversion
+        // on sparse/downsampled maps where local covariance may be degenerate.
+        // gicp_epsilon_ controls the regularization strength (0.001~0.01 recommended)
+        Eigen::Matrix3d regularization = Eigen::Matrix3d::Identity() * gicp_epsilon_;
+        temp += regularization;
+
         // M = temp^-1
         M = temp.inverse ();
 		M_.block<3, 3>(0, 0) = M.cast<float>();
@@ -458,14 +480,14 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
     source_indices.resize(cnt); target_indices.resize(cnt);
 
     std::vector<std::pair<int, int>> indices(source_indices.size());
-    for(int i = 0; i<source_indices.size(); i++) {
+    for(int i = 0; i<static_cast<int>(source_indices.size()); i++) {
       indices[i].first = source_indices[i];
       indices[i].second = target_indices[i];
     }
 
     std::sort(indices.begin(), indices.end(), [=](const std::pair<int, int>& lhs, const std::pair<int, int>& rhs) { return lhs.first < rhs.first; });
 
-    for(int i = 0; i < source_indices.size(); i++) {
+    for(int i = 0; i < static_cast<int>(source_indices.size()); i++) {
       source_indices[i] = indices[i].first;
       target_indices[i] = indices[i].second;
     }
@@ -476,6 +498,11 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
     try
     {
       rigid_transformation_estimation_(output, source_indices, *target_, target_indices, transformation_);
+      // If the optimizer produced NaN/Inf, revert to previous and abort
+      if (!transformation_.allFinite()) {
+        transformation_ = previous_transformation_;
+        break;
+      }
       /* compute the delta from this iteration */
       delta = 0.;
       for(int k = 0; k < 4; k++) {
@@ -506,7 +533,9 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
                  getClassName ().c_str (), nr_iterations_, max_iterations_, (transformation_ - previous_transformation_).array ().abs ().sum ());
     }
     else
+    {
       PCL_DEBUG ("[pcl::%s::computeTransformation] Convergence failed\n", getClassName ().c_str ());
+    }
   }
   final_transformation_ = previous_transformation_ * guess;
 
