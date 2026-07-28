@@ -40,7 +40,7 @@ def _sha256(path: Path) -> str:
 
 def _git(*args: str) -> str:
     return subprocess.run(
-        ['git', *args],
+        ['git', '-c', f'safe.directory={REPO_ROOT}', *args],
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,
@@ -98,6 +98,8 @@ def _archive_source(commit: str, target: Path) -> None:
     subprocess.run(
         [
             'git',
+            '-c',
+            f'safe.directory={REPO_ROOT}',
             'archive',
             '--format=tar',
             f'--output={archive}',

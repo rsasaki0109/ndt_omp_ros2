@@ -41,6 +41,10 @@ class BloomReleaseContractTest(unittest.TestCase):
     def test_script_and_schema_use_same_uri(self) -> None:
         self.assertEqual(self.gate.SCHEMA_URI, self.schema['$id'])
 
+    def test_git_calls_allow_only_the_exact_mounted_repository(self) -> None:
+        source = SCRIPT.read_text(encoding='utf-8')
+        self.assertEqual(source.count("f'safe.directory={REPO_ROOT}'"), 2)
+
     def test_supported_ros_and_os_pairs_are_explicit(self) -> None:
         self.assertEqual(
             self.schema['properties']['ros_distro']['enum'],
