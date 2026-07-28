@@ -12,8 +12,6 @@
 #include <pclomp/ndt_omp.h>
 #include <pclomp/gicp_omp.h>
 
-#include <std_msgs/msg/string.hpp>
-
 // align point clouds and measure processing time
 pcl::PointCloud<pcl::PointXYZ>::Ptr align(boost::shared_ptr<pcl::Registration<pcl::PointXYZ, pcl::PointXYZ>> registration, const pcl::PointCloud<pcl::PointXYZ>::Ptr& target_cloud, const pcl::PointCloud<pcl::PointXYZ>::Ptr& source_cloud ) {
   registration->setInputTarget(target_cloud);
