@@ -1,5 +1,7 @@
 # ndt_omp_ros2
 
+[![CI](https://github.com/rsasaki0109/ndt_omp_ros2/actions/workflows/ci.yml/badge.svg)](https://github.com/rsasaki0109/ndt_omp_ros2/actions/workflows/ci.yml)
+
 This package provides an OpenMP-boosted Normal Distributions Transform (and GICP) algorithm derived from pcl. The NDT algorithm is modified to be SSE-friendly and multi-threaded. It can run up to 10 times faster than its original version in pcl.
 
 ## Supported ROS distributions

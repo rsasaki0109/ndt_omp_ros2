@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - humble
+      - release/**
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-consume:
+    name: ROS ${{ matrix.ros_distro }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ros_distro: humble
+            image: ros@sha256:afb40d6be65331c20a114d4e229a7ef099fed1b17bf6370daee193514b32aa16
+          - ros_distro: jazzy
+            image: ros@sha256:31daab66eef9139933379fb67159449944f4e2dcf2e22c2d12cc715f29873e0f
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install declared dependencies
+        env:
+          ROS_DISTRO: ${{ matrix.ros_distro }}
+        run: |
+          apt-get update
+          rosdep update --rosdistro "$ROS_DISTRO"
+          rosdep install \
+            --from-paths . \
+            --ignore-src \
+            --rosdistro "$ROS_DISTRO" \
+            --as-root apt:false \
+            --default-yes
+
+      - name: Build and run package tests
+        env:
+          ROS_DISTRO: ${{ matrix.ros_distro }}
+        run: |
+          # shellcheck disable=SC1090
+          source "/opt/ros/$ROS_DISTRO/setup.bash"
+          colcon build \
+            --merge-install \
+            --event-handlers console_direct+ \
+            --cmake-args -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          colcon test \
+            --merge-install \
+            --event-handlers console_direct+
+          colcon test-result --verbose
+
+      - name: Verify installed package contract
+        env:
+          ROS_DISTRO: ${{ matrix.ros_distro }}
+        run: |
+          test -f install/lib/libndt_omp.a
+          test -x install/lib/ndt_omp_ros2/align
+
+          # shellcheck disable=SC1090
+          source "/opt/ros/$ROS_DISTRO/setup.bash"
+          source install/setup.bash
+          cmake \
+            -S test/consumer \
+            -B consumer-build \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build consumer-build --parallel 2
+          ./consumer-build/consumer
