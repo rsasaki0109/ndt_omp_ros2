@@ -55,6 +55,8 @@ Use `ROS_DISTRO=humble OS_VERSION=jammy` or
 empty. It contains the JSON report, command logs, hashes, and the runtime
 `.deb`; CI uploads the directory for each supported distribution. This gate is
 a release prerequisite, but it does not create a tag or publish to rosdistro.
+Maintainer-run results and artifact hashes are recorded in
+[`docs/release-evidence.md`](docs/release-evidence.md).
 
 ## Benchmark
 
