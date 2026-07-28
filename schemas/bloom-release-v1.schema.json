@@ -155,6 +155,42 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ros_distro": {
+            "const": "humble"
+          }
+        },
+        "required": ["ros_distro"]
+      },
+      "then": {
+        "properties": {
+          "os_version": {
+            "const": "jammy"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ros_distro": {
+            "const": "jazzy"
+          }
+        },
+        "required": ["ros_distro"]
+      },
+      "then": {
+        "properties": {
+          "os_version": {
+            "const": "noble"
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "timestamp": {
       "type": "string",

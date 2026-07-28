@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -91,6 +92,11 @@ def _package_metadata(root: Path) -> tuple[str, str]:
     if not name or not version:
         raise ValueError('package.xml name and version must be non-empty')
     return name, version
+
+
+def _release_version_nonzero(version: str) -> bool:
+    match = re.fullmatch(r'([0-9]+)\.([0-9]+)\.([0-9]+)', version)
+    return bool(match and any(int(part) for part in match.groups()))
 
 
 def _archive_source(commit: str, target: Path) -> None:
@@ -248,7 +254,7 @@ def run(args: argparse.Namespace) -> int:
             ),
             _check(
                 'release_version_nonzero',
-                package_version == '0.1.0',
+                _release_version_nonzero(package_version),
                 f'package_version={package_version}',
             ),
             _check(

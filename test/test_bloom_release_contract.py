@@ -45,6 +45,14 @@ class BloomReleaseContractTest(unittest.TestCase):
         source = SCRIPT.read_text(encoding='utf-8')
         self.assertEqual(source.count("f'safe.directory={REPO_ROOT}'"), 2)
 
+    def test_release_version_must_be_three_part_and_nonzero(self) -> None:
+        for valid in ('0.1.0', '0.2.0', '1.0.0', '10.20.30'):
+            with self.subTest(valid=valid):
+                self.assertTrue(self.gate._release_version_nonzero(valid))
+        for invalid in ('0.0.0', '1.0', '1.0.0-dev', 'v1.0.0', ''):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(self.gate._release_version_nonzero(invalid))
+
     def test_supported_ros_and_os_pairs_are_explicit(self) -> None:
         self.assertEqual(
             self.schema['properties']['ros_distro']['enum'],
@@ -54,6 +62,10 @@ class BloomReleaseContractTest(unittest.TestCase):
             self.schema['properties']['os_version']['enum'],
             ['jammy', 'noble'],
         )
+        encoded = json.dumps(self.schema['allOf'], sort_keys=True)
+        for fragment in ('humble', 'jammy', 'jazzy', 'noble'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, encoded)
 
     def test_workflow_runs_bloom_gate_for_matrix_pair(self) -> None:
         required_fragments = [
