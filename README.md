@@ -29,6 +29,33 @@ find_package(ndt_omp_ros2 REQUIRED)
 target_link_libraries(my_registration_node ndt_omp_ros2::ndt_omp)
 ```
 
+## Release preflight
+
+The release gate generates Debian metadata with Bloom from the current clean
+Git commit, builds the binary package, and verifies its identity and installed
+library, executable, and manifest. Run it in the matching official ROS image:
+
+```bash
+apt-get update
+apt-get install -y python3-bloom python3-jsonschema fakeroot debhelper
+rosdep update --rosdistro "$ROS_DISTRO"
+rosdep install --from-paths . --ignore-src -r -y \
+  --rosdistro "$ROS_DISTRO"
+python3 scripts/check_bloom_release.py \
+  --ros-distro "$ROS_DISTRO" \
+  --os-version "$OS_VERSION" \
+  --evidence-dir "/tmp/ndt-omp-bloom-$ROS_DISTRO"
+python3 -m jsonschema \
+  --instance "/tmp/ndt-omp-bloom-$ROS_DISTRO/bloom_release_report.json" \
+  schemas/bloom-release-v1.schema.json
+```
+
+Use `ROS_DISTRO=humble OS_VERSION=jammy` or
+`ROS_DISTRO=jazzy OS_VERSION=noble`. The evidence directory must be new or
+empty. It contains the JSON report, command logs, hashes, and the runtime
+`.deb`; CI uploads the directory for each supported distribution. This gate is
+a release prerequisite, but it does not create a tag or publish to rosdistro.
+
 ## Benchmark
 
 The repository includes two sample point clouds for the benchmark executable:
