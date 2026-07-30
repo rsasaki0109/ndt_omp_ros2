@@ -41,7 +41,6 @@
 #define PCL_REGISTRATION_IMPL_GICP_OMP_HPP_
 
 #include <atomic>
-#include <boost/shared_ptr.hpp>
 #include <pcl/registration/exceptions.h>
 
 ////////////////////////////////////////////////////////////////////////////////////////

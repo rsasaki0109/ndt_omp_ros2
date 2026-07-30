@@ -43,7 +43,6 @@
 
 #include <pcl/registration/icp.h>
 #include <pcl/registration/bfgs.h>
-#include <boost/shared_ptr.hpp>
 
 namespace pclomp
 {
@@ -92,14 +91,14 @@ namespace pclomp
       using PointIndicesConstPtr = pcl::PointIndices::ConstPtr;
 
       using MatricesVector = std::vector<Eigen::Matrix3d, Eigen::aligned_allocator<Eigen::Matrix3d> >;
-      using MatricesVectorPtr = boost::shared_ptr<MatricesVector>;
-      using MatricesVectorConstPtr = boost::shared_ptr<const MatricesVector>;
+      using MatricesVectorPtr = std::shared_ptr<MatricesVector>;
+      using MatricesVectorConstPtr = std::shared_ptr<const MatricesVector>;
 
       using InputKdTree = typename pcl::Registration<PointSource, PointTarget>::KdTree;
       using InputKdTreePtr = typename pcl::Registration<PointSource, PointTarget>::KdTreePtr;
 
-      using Ptr = boost::shared_ptr<GeneralizedIterativeClosestPoint<PointSource, PointTarget> >;
-      using ConstPtr = boost::shared_ptr<const GeneralizedIterativeClosestPoint<PointSource, PointTarget> >;
+      using Ptr = std::shared_ptr<GeneralizedIterativeClosestPoint<PointSource, PointTarget> >;
+      using ConstPtr = std::shared_ptr<const GeneralizedIterativeClosestPoint<PointSource, PointTarget> >;
 
 
       using Vector6d = Eigen::Matrix<double, 6, 1>;

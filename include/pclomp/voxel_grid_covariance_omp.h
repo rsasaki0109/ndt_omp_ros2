@@ -38,7 +38,6 @@
 #ifndef PCL_VOXEL_GRID_COVARIANCE_OMP_H_
 #define PCL_VOXEL_GRID_COVARIANCE_OMP_H_
 
-#include <boost/shared_ptr.hpp>
 #include <pcl/filters/voxel_grid.h>
 #include <map>
 #include <unordered_map>
@@ -84,8 +83,8 @@ namespace pclomp
 
     public:
 
-      typedef boost::shared_ptr< pcl::VoxelGrid<PointT> > Ptr;
-      typedef boost::shared_ptr< const pcl::VoxelGrid<PointT> > ConstPtr;
+      typedef std::shared_ptr< pcl::VoxelGrid<PointT> > Ptr;
+      typedef std::shared_ptr< const pcl::VoxelGrid<PointT> > ConstPtr;
 
       /** \brief Simple structure to hold a centroid, covarince and the number of points in a leaf.
         * Inverse covariance, eigen vectors and engen values are precomputed. */
