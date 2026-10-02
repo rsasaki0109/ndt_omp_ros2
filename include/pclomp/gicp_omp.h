@@ -358,6 +358,13 @@ namespace pclomp
         void  df(const Vector6d &x, Vector6d &df) override;
         void fdf(const Vector6d &x, double &f, Vector6d &df) override;
 
+        BFGSSpace::Status checkGradient(const Vector6d &gradient) override {
+          // PCL's default callback returns NotStarted, not a convergence test.
+          // Match the translation and rotation tolerances of PCL GICP.
+          return gradient.head<3>().norm() < 0.01 && gradient.tail<3>().norm() < 0.01
+            ? BFGSSpace::Success : BFGSSpace::Running;
+        }
+
         const GeneralizedIterativeClosestPoint *gicp_;
       };
 
