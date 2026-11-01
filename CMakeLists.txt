@@ -5,6 +5,14 @@ if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 14)
 endif()
 
+# NDT and GICP run here. A plain `colcon build` sets no build type, which
+# compiles them without optimization: 12-15 times slower alignment. A build
+# type set by the caller or the buildfarm is kept.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+  message(STATUS "No CMAKE_BUILD_TYPE given; building ndt_omp_ros2 as Release")
+endif()
+
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(PCL 1.12 REQUIRED)

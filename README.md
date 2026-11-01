@@ -21,6 +21,9 @@ colcon build --packages-select ndt_omp_ros2
 source install/setup.bash
 ```
 
+Without `--cmake-args -DCMAKE_BUILD_TYPE=...` the package builds as `Release`;
+an explicit build type is kept.
+
 The package installs and exports the `ndt_omp_ros2::ndt_omp` CMake target.
 A downstream package can use it with:
 
