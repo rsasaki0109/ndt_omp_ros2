@@ -2,6 +2,13 @@
 Changelog for package ndt_omp_ros2
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Build as Release when no ``CMAKE_BUILD_TYPE`` is given. A plain
+  ``colcon build`` compiled NDT and GICP without optimization: on a 1500-point
+  Autoware Istanbul scan NDT aligned in 250 ms instead of 19 ms (4 threads).
+  A build type set by the caller or the buildfarm is kept.
+
 0.1.0 (2026-06-11)
 ------------------
 * First release prepared for the ROS 2 buildfarm (Humble / Jazzy).
