@@ -40,8 +40,13 @@
 
 #include <boost/shared_ptr.hpp>
 #include <pcl/filters/voxel_grid.h>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <map>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 #include <pcl/point_types.h>
 #include <pcl/kdtree/kdtree_flann.h>
 
@@ -488,12 +493,12 @@ namespace pclomp
         k_leaves.reserve (k);
         for (std::vector<int>::iterator iter = k_indices.begin (); iter != k_indices.end (); iter++)
         {
-		  auto leaf = leaves_.find(voxel_centroids_leaf_indices_[*iter]);
-		  if (leaf == leaves_.end()) {
+		  LeafConstPtr leaf = findLeaf(voxel_centroids_leaf_indices_[*iter]);
+		  if (leaf == nullptr) {
 			  std::cerr << "error : could not find the leaf corresponding to the voxel" << std::endl;
 			  std::cin.ignore(1);
 		  }
-          k_leaves.push_back (&(leaf->second));
+          k_leaves.push_back (leaf);
         }
         return k;
       }
@@ -536,6 +541,121 @@ namespace pclomp
 
       /** \brief Voxel structure containing all leaf nodes (includes voxels with less than a sufficient number of points). */
 	  Map leaves_;
+
+      /** \brief Open-addressing hash table from leaf index to leaf in \ref leaves_.
+        * A std::map lookup walks about 17 tree nodes for a 100 000-leaf target; a probe
+        * here reads one or two adjacent slots. applyFilter() fills it. A move takes the
+        * table along with the leaves it points to. A copy comes out empty, because the
+        * pointers belong to the source's leaves_: \ref findLeaf then falls back to
+        * leaves_ until the copy is filtered again.
+        */
+      class LeafTable
+      {
+        public:
+          LeafTable () = default;
+          LeafTable (const LeafTable &) {}
+          LeafTable & operator= (const LeafTable &) { clear (); return *this; }
+          LeafTable (LeafTable && other) noexcept
+            : slots_ (std::move (other.slots_)), mask_ (other.mask_), size_ (other.size_)
+          {
+            other.clear ();
+          }
+          LeafTable &
+          operator= (LeafTable && other) noexcept
+          {
+            slots_ = std::move (other.slots_);
+            mask_ = other.mask_;
+            size_ = other.size_;
+            other.clear ();
+            return *this;
+          }
+
+          void
+          clear ()
+          {
+            slots_.clear ();
+            mask_ = 0;
+            size_ = 0;
+          }
+
+          /** \brief Empty the table and make room for count leaves, at most half full. */
+          void
+          reset (std::size_t count)
+          {
+            std::size_t capacity = 16;
+            while (capacity < 2 * count)
+              capacity *= 2;
+            slots_.assign (capacity, Slot{empty (), nullptr});
+            mask_ = capacity - 1;
+            size_ = 0;
+          }
+
+          /** \brief Add a leaf whose key is not in the table yet. */
+          void
+          insert (std::size_t key, LeafConstPtr leaf)
+          {
+            std::size_t slot = hash (key) & mask_;
+            while (slots_[slot].key != empty ())
+              slot = (slot + 1) & mask_;
+            slots_[slot] = Slot{key, leaf};
+            ++size_;
+          }
+
+          /** \brief Number of leaves in the table. */
+          std::size_t
+          size () const { return size_; }
+
+          LeafConstPtr
+          find (std::size_t key) const
+          {
+            if (slots_.empty ())
+              return nullptr;
+            for (std::size_t slot = hash (key) & mask_;; slot = (slot + 1) & mask_)
+            {
+              const Slot & s = slots_[slot];
+              if (s.key == key)
+                return s.leaf;
+              if (s.key == empty ())
+                return nullptr;
+            }
+          }
+
+        private:
+          struct Slot
+          {
+            std::size_t key;
+            LeafConstPtr leaf;
+          };
+
+          static std::size_t
+          empty () { return std::numeric_limits<std::size_t>::max (); }
+
+          static std::size_t
+          hash (std::size_t key)
+          {
+            const std::uint64_t h = static_cast<std::uint64_t> (key) * 0x9E3779B97F4A7C15ull;
+            return static_cast<std::size_t> (h ^ (h >> 32));
+          }
+
+          std::vector<Slot> slots_;
+          std::size_t mask_ = 0;
+          std::size_t size_ = 0;
+      };
+
+      /** \brief Hash table over \ref leaves_, see \ref LeafTable. */
+      LeafTable leaf_table_;
+
+      /** \brief The leaf with this index, or nullptr. Uses \ref leaf_table_ while it holds
+        * every leaf of \ref leaves_, else leaves_ itself.
+        */
+      inline LeafConstPtr
+      findLeaf (std::size_t index) const
+      {
+        if (leaf_table_.size () == leaves_.size ())
+          return leaf_table_.find (index);
+        auto leaf_iter = leaves_.find (index);
+        return leaf_iter != leaves_.end () ? &(leaf_iter->second) : nullptr;
+      }
 
       /** \brief Point cloud containing centroids of voxels containing atleast minimum number of points. */
       PointCloudPtr voxel_centroids_;

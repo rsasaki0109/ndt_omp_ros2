@@ -218,88 +218,105 @@ pclomp::NormalDistributionsTransform<PointSource, PointTarget>::computeDerivativ
 	// Precompute Angular Derivatives (eq. 6.19 and 6.21)[Magnusson 2009]
 	computeAngleDerivatives(p);
 
-  std::vector<std::vector<TargetGridLeafConstPtr>> neighborhoods(num_threads_);
-  std::vector<std::vector<float>> distancess(num_threads_);
-
-	// Update gradient and hessian for each point, line 17 in Algorithm 2 [Magnusson 2009]
-#pragma omp parallel for num_threads(num_threads_) schedule(guided, 8)
-	for (int idx = 0; idx < input_->points.size(); idx++)
+	// Update gradient and hessian for each point, line 17 in Algorithm 2 [Magnusson 2009].
+	// Each thread sums into its own locals and stores them once at the end. The per-thread
+	// entries of the vectors above share cache lines, so writing them for every point
+	// and correspondence made the threads keep invalidating each other's caches.
+#pragma omp parallel num_threads(num_threads_)
 	{
-		int thread_n = omp_get_thread_num();
+		const int thread_n = omp_get_thread_num();
+		double score_thread = 0;
+		Eigen::Matrix<double, 6, 1> score_gradient_thread = Eigen::Matrix<double, 6, 1>::Zero();
+		Eigen::Matrix<double, 6, 6> hessian_thread = Eigen::Matrix<double, 6, 6>::Zero();
+		double corr_dist_sum_thread = 0.0;
+		int corr_count_thread = 0;
+		std::vector<TargetGridLeafConstPtr> neighborhood;
+		std::vector<float> distances;
 
-		// Original Point and Transformed Point
-		PointSource x_pt, x_trans_pt;
-		// Original Point and Transformed Point (for math)
-		Eigen::Vector3d x, x_trans;
-		// Occupied Voxel
-		TargetGridLeafConstPtr cell;
-		// Inverse Covariance of Occupied Voxel
-		Eigen::Matrix3d c_inv;
-
-		// Initialize Point Gradient and Hessian
-		Eigen::Matrix<float, 4, 6> point_gradient_;
-		Eigen::Matrix<float, 24, 6> point_hessian_;
-		point_gradient_.setZero();
-		point_gradient_.block<3, 3>(0, 0).setIdentity();
-		point_hessian_.setZero();
-
-		x_trans_pt = trans_cloud.points[idx];
-
-		auto& neighborhood = neighborhoods[thread_n];
-		auto& distances = distancess[thread_n];
-
-		// Find nieghbors (Radius search has been experimentally faster than direct neighbor checking.
-		switch (search_method) {
-		case KDTREE:
-			target_cells_.radiusSearch(x_trans_pt, resolution_, neighborhood, distances);
-			break;
-		case DIRECT26:
-			target_cells_.getNeighborhoodAtPoint(x_trans_pt, neighborhood);
-			break;
-		default:
-		case DIRECT7:
-			target_cells_.getNeighborhoodAtPoint7(x_trans_pt, neighborhood);
-			break;
-		case DIRECT1:
-			target_cells_.getNeighborhoodAtPoint1(x_trans_pt, neighborhood);
-			break;
-		}
-
-		double score_pt = 0;
-		Eigen::Matrix<double, 6, 1> score_gradient_pt = Eigen::Matrix<double, 6, 1>::Zero();
-		Eigen::Matrix<double, 6, 6> hessian_pt = Eigen::Matrix<double, 6, 6>::Zero();
-
-		for (typename std::vector<TargetGridLeafConstPtr>::iterator neighborhood_it = neighborhood.begin(); neighborhood_it != neighborhood.end(); neighborhood_it++)
+#pragma omp for schedule(guided, 8)
+		for (int idx = 0; idx < input_->points.size(); idx++)
 		{
-			cell = *neighborhood_it;
-			x_pt = input_->points[idx];
-			x = Eigen::Vector3d(x_pt.x, x_pt.y, x_pt.z);
+			// Original Point and Transformed Point
+			PointSource x_pt, x_trans_pt;
+			// Original Point and Transformed Point (for math)
+			Eigen::Vector3d x, x_trans;
+			// Occupied Voxel
+			TargetGridLeafConstPtr cell;
+			// Inverse Covariance of Occupied Voxel
+			Eigen::Matrix3d c_inv;
 
-			x_trans = Eigen::Vector3d(x_trans_pt.x, x_trans_pt.y, x_trans_pt.z);
+			// Initialize Point Gradient and Hessian
+			Eigen::Matrix<float, 4, 6> point_gradient_;
+			Eigen::Matrix<float, 24, 6> point_hessian_;
+			point_gradient_.setZero();
+			point_gradient_.block<3, 3>(0, 0).setIdentity();
+			point_hessian_.setZero();
 
-			// Denorm point, x_k' in Equations 6.12 and 6.13 [Magnusson 2009]
-			x_trans -= cell->getMean();
+			x_trans_pt = trans_cloud.points[idx];
 
-			// Adaptive correspondence distance threshold (KISS-ICP inspired)
-			double corr_dist = x_trans.norm();
-			if (max_correspondence_distance_ > 0.0 && corr_dist > max_correspondence_distance_) {
-				continue;  // Skip outlier correspondences
+			// Find nieghbors (Radius search has been experimentally faster than direct neighbor checking.
+			switch (search_method) {
+			case KDTREE:
+				target_cells_.radiusSearch(x_trans_pt, resolution_, neighborhood, distances);
+				break;
+			case DIRECT26:
+				target_cells_.getNeighborhoodAtPoint(x_trans_pt, neighborhood);
+				break;
+			default:
+			case DIRECT7:
+				target_cells_.getNeighborhoodAtPoint7(x_trans_pt, neighborhood);
+				break;
+			case DIRECT1:
+				target_cells_.getNeighborhoodAtPoint1(x_trans_pt, neighborhood);
+				break;
 			}
-			corr_dist_sums[thread_n] += corr_dist;
-			corr_counts[thread_n]++;
 
-			// Uses precomputed covariance for speed.
-			c_inv = cell->getInverseCov();
+			double score_pt = 0;
+			Eigen::Matrix<double, 6, 1> score_gradient_pt = Eigen::Matrix<double, 6, 1>::Zero();
+			Eigen::Matrix<double, 6, 6> hessian_pt = Eigen::Matrix<double, 6, 6>::Zero();
 
-			// Compute derivative of transform function w.r.t. transform vector, J_E and H_E in Equations 6.18 and 6.20 [Magnusson 2009]
-			computePointDerivatives(x, point_gradient_, point_hessian_);
-			// Update score, gradient and hessian, lines 19-21 in Algorithm 2, according to Equations 6.10, 6.12 and 6.13, respectively [Magnusson 2009]
-			score_pt += updateDerivatives(score_gradient_pt, hessian_pt, point_gradient_, point_hessian_, x_trans, c_inv, compute_hessian);
+			if (!neighborhood.empty())
+			{
+				// The derivatives of the transform depend on the source point only, not on the cell.
+				x_pt = input_->points[idx];
+				x = Eigen::Vector3d(x_pt.x, x_pt.y, x_pt.z);
+				computePointDerivatives(x, point_gradient_, point_hessian_);
+			}
+
+			for (typename std::vector<TargetGridLeafConstPtr>::iterator neighborhood_it = neighborhood.begin(); neighborhood_it != neighborhood.end(); neighborhood_it++)
+			{
+				cell = *neighborhood_it;
+
+				x_trans = Eigen::Vector3d(x_trans_pt.x, x_trans_pt.y, x_trans_pt.z);
+
+				// Denorm point, x_k' in Equations 6.12 and 6.13 [Magnusson 2009]
+				x_trans -= cell->getMean();
+
+				// Adaptive correspondence distance threshold (KISS-ICP inspired)
+				double corr_dist = x_trans.norm();
+				if (max_correspondence_distance_ > 0.0 && corr_dist > max_correspondence_distance_) {
+					continue;  // Skip outlier correspondences
+				}
+				corr_dist_sum_thread += corr_dist;
+				corr_count_thread++;
+
+				// Uses precomputed covariance for speed.
+				c_inv = cell->getInverseCov();
+
+				// Update score, gradient and hessian, lines 19-21 in Algorithm 2, according to Equations 6.10, 6.12 and 6.13, respectively [Magnusson 2009]
+				score_pt += updateDerivatives(score_gradient_pt, hessian_pt, point_gradient_, point_hessian_, x_trans, c_inv, compute_hessian);
+			}
+
+			score_thread += score_pt;
+			score_gradient_thread.noalias() += score_gradient_pt;
+			hessian_thread.noalias() += hessian_pt;
 		}
 
-		scores[thread_n] += score_pt;
-		score_gradients[thread_n].noalias() += score_gradient_pt;
-		hessians[thread_n].noalias() += hessian_pt;
+		scores[thread_n] = score_thread;
+		score_gradients[thread_n] = score_gradient_thread;
+		hessians[thread_n] = hessian_thread;
+		corr_dist_sums[thread_n] = corr_dist_sum_thread;
+		corr_counts[thread_n] = corr_count_thread;
 	}
 
   double total_corr_dist = 0.0;
