@@ -97,6 +97,7 @@ pclomp::VoxelGridCovariance<PointT>::applyFilter (PointCloud &output)
 
   // Clear the leaves
   leaves_.clear ();
+  leaf_table_.clear ();
 //  leaves_.reserve(8192);
 
   // Set up the division multiplier
@@ -279,11 +280,13 @@ pclomp::VoxelGridCovariance<PointT>::applyFilter (PointCloud &output)
   // Eigen values less than a threshold of max eigen value are inflated to a set fraction of the max eigen value.
   double min_covar_eigvalue;
 
+  leaf_table_.reset (leaves_.size ());
   for (auto it = leaves_.begin (); it != leaves_.end (); ++it)
   {
 
     // Normalize the centroid
     Leaf& leaf = it->second;
+    leaf_table_.insert (it->first, &leaf);
 
     // Normalize the centroid
     leaf.centroid /= static_cast<float> (leaf.nr_points);
@@ -391,10 +394,9 @@ pclomp::VoxelGridCovariance<PointT>::getNeighborhoodAtPoint(const Eigen::MatrixX
 		// Checking if the specified cell is in the grid
 		if ((diff2min <= displacement.array()).all() && (diff2max >= displacement.array()).all())
 		{
-			auto leaf_iter = leaves_.find(((ijk + displacement - min_b_).dot(divb_mul_)));
-			if (leaf_iter != leaves_.end() && leaf_iter->second.nr_points >= min_points_per_voxel_)
+			LeafConstPtr leaf = findLeaf((ijk + displacement - min_b_).dot(divb_mul_));
+			if (leaf != nullptr && leaf->nr_points >= min_points_per_voxel_)
 			{
-				LeafConstPtr leaf = &(leaf_iter->second);
 				neighbors.push_back(leaf);
 			}
 		}
@@ -409,8 +411,8 @@ pclomp::VoxelGridCovariance<PointT>::getNeighborhoodAtPoint(const PointT& refere
 {
 	neighbors.clear();
 
-	// Find displacement coordinates
-	Eigen::MatrixXi relative_coordinates = pcl::getAllNeighborCellIndices();
+	// Find displacement coordinates (built once, not on every call)
+	static const Eigen::MatrixXi relative_coordinates = pcl::getAllNeighborCellIndices();
 	return getNeighborhoodAtPoint(relative_coordinates, reference_point, neighbors);
 }
 
@@ -420,14 +422,17 @@ pclomp::VoxelGridCovariance<PointT>::getNeighborhoodAtPoint7(const PointT& refer
 {
 	neighbors.clear();
 
-	Eigen::MatrixXi relative_coordinates(3, 7);
-	relative_coordinates.setZero();
-	relative_coordinates(0, 1) = 1;
-	relative_coordinates(0, 2) = -1;
-	relative_coordinates(1, 3) = 1;
-	relative_coordinates(1, 4) = -1;
-	relative_coordinates(2, 5) = 1;
-	relative_coordinates(2, 6) = -1;
+	// The voxel itself and its six face neighbours, built once, not on every call.
+	static const Eigen::MatrixXi relative_coordinates = [] {
+		Eigen::MatrixXi coordinates = Eigen::MatrixXi::Zero(3, 7);
+		coordinates(0, 1) = 1;
+		coordinates(0, 2) = -1;
+		coordinates(1, 3) = 1;
+		coordinates(1, 4) = -1;
+		coordinates(2, 5) = 1;
+		coordinates(2, 6) = -1;
+		return coordinates;
+	}();
 
 	return getNeighborhoodAtPoint(relative_coordinates, reference_point, neighbors);
 }
@@ -438,7 +443,8 @@ template<typename PointT> int
 pclomp::VoxelGridCovariance<PointT>::getNeighborhoodAtPoint1(const PointT& reference_point, std::vector<LeafConstPtr> &neighbors) const
 {
 	neighbors.clear();
-	return getNeighborhoodAtPoint(Eigen::MatrixXi::Zero(3,1), reference_point, neighbors);
+	static const Eigen::MatrixXi relative_coordinates = Eigen::MatrixXi::Zero(3, 1);
+	return getNeighborhoodAtPoint(relative_coordinates, reference_point, neighbors);
 }
 
 

@@ -75,6 +75,9 @@ if(BUILD_TESTING)
   ament_add_gtest(test_public_api test/test_public_api.cpp)
   target_link_libraries(test_public_api ndt_omp)
 
+  ament_add_gtest(test_ndt_neighbourhoods test/test_ndt_neighbourhoods.cpp)
+  target_link_libraries(test_ndt_neighbourhoods ndt_omp)
+
   ament_add_gtest(test_gicp_known_transform test/test_gicp_known_transform.cpp)
   target_link_libraries(test_gicp_known_transform ndt_omp)
   set_tests_properties(test_gicp_known_transform PROPERTIES ENVIRONMENT "OMP_NUM_THREADS=4")

@@ -4,6 +4,25 @@ Changelog for package ndt_omp_ros2
 
 Forthcoming
 -----------
+* NDT aligns about twice as fast, with the same result.
+
+  * **False sharing:** each thread added its score, gradient, Hessian and
+    correspondence counts into its own entry of shared vectors, for every point
+    and correspondence. The entries share cache lines, so the threads kept
+    invalidating each other's caches. They now sum into locals and store them
+    once.
+  * **Voxel lookups:** the DIRECT1/7/26 neighbourhoods and the KDTREE results
+    looked each voxel up in a ``std::map``, about 17 tree nodes for a
+    100 000-voxel target. A hash table over the leaves, filled in the pass
+    ``filter()`` already makes over them, replaces those lookups.
+  * The transform's derivatives for a point are computed once, not once per
+    voxel it falls near, and the neighbour offsets are built once.
+  * **Measured:** on 154 Boreas scans (4 650 points, 100 m crop of the map,
+    resolution 1.0, 4 vCPUs), DIRECT7 takes 14 ms instead of 27.5 ms on
+    8 threads, and 12 ms instead of 33.6 ms on 4. From a seed 0.5 m off it
+    takes 33 ms instead of 65 ms. KDTREE, DIRECT26 and DIRECT1 are 1.7-2.4
+    times faster. The final transforms are bit-identical on all 154 scans for
+    all four methods.
 * Build as Release when no ``CMAKE_BUILD_TYPE`` is given. A plain
   ``colcon build`` compiled NDT and GICP without optimization: on a 1500-point
   Autoware Istanbul scan NDT aligned in 250 ms instead of 19 ms (4 threads).
