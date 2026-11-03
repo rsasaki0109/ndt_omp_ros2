@@ -40,7 +40,8 @@
 #ifndef PCL_REGISTRATION_IMPL_GICP_OMP_HPP_
 #define PCL_REGISTRATION_IMPL_GICP_OMP_HPP_
 
-#include <atomic>
+#include <utility>
+#include <vector>
 #include <boost/shared_ptr.hpp>
 #include <pcl/registration/exceptions.h>
 
@@ -250,24 +251,28 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::Optimization
   std::vector<double> f_array(omp_get_max_threads(), 0.0);
 
   int m = static_cast<int> (gicp_->tmp_idx_src_->size ());
-  #pragma omp parallel for
-  for(int i = 0; i < m; ++i)
+  // Each thread sums into a local and stores it once: the entries of f_array share a
+  // cache line, and adding into them for every point made the threads keep
+  // invalidating each other's caches.
+  #pragma omp parallel
   {
-    // The last coordinate, p_src[3] is guaranteed to be set to 1.0 in registration.hpp
-    pcl::Vector4fMapConst p_src = gicp_->tmp_src_->points[(*gicp_->tmp_idx_src_)[i]].getVector4fMap();
-    // The last coordinate, p_tgt[3] is guaranteed to be set to 1.0 in registration.hpp
-    pcl::Vector4fMapConst p_tgt = gicp_->tmp_tgt_->points[(*gicp_->tmp_idx_tgt_)[i]].getVector4fMap();
-    // Estimate the distance (cost function)
-    // The last coordiante is still guaranteed to be set to 1.0
-    // Eigen::AlignedVector3<double> res(pp[0] - p_tgt[0], pp[1] - p_tgt[1], pp[2] - p_tgt[2]);
-    // Eigen::AlignedVector3<double> temp(gicp_->mahalanobis((*gicp_->tmp_idx_src_)[i]) * res);
-	Eigen::Vector4f res = transformation_matrix * p_src - p_tgt;
-	Eigen::Matrix4f maha = gicp_->mahalanobis((*gicp_->tmp_idx_src_)[i]);
-    // Eigen::Vector4d temp(maha * res);
-    // increment= res'*temp/num_matches = temp'*M*temp/num_matches (we postpone 1/num_matches after the loop closes)
-    // double ret = double(res.transpose() * temp);
-	double ret = res.dot(maha*res);
-	f_array[omp_get_thread_num()] += ret;
+    double f_thread = 0.0;
+    #pragma omp for nowait
+    for(int i = 0; i < m; ++i)
+    {
+      // The last coordinate, p_src[3] is guaranteed to be set to 1.0 in registration.hpp
+      pcl::Vector4fMapConst p_src = gicp_->tmp_src_->points[(*gicp_->tmp_idx_src_)[i]].getVector4fMap();
+      // The last coordinate, p_tgt[3] is guaranteed to be set to 1.0 in registration.hpp
+      pcl::Vector4fMapConst p_tgt = gicp_->tmp_tgt_->points[(*gicp_->tmp_idx_tgt_)[i]].getVector4fMap();
+      // Estimate the distance (cost function)
+      // The last coordiante is still guaranteed to be set to 1.0
+      Eigen::Vector4f res = transformation_matrix * p_src - p_tgt;
+      Eigen::Matrix4f maha = gicp_->mahalanobis((*gicp_->tmp_idx_src_)[i]);
+      // increment= res'*temp/num_matches = temp'*M*temp/num_matches (we postpone 1/num_matches after the loop closes)
+      double ret = res.dot(maha*res);
+      f_thread += ret;
+    }
+    f_array[omp_get_thread_num()] = f_thread;
   }
   f = std::accumulate(f_array.begin(), f_array.end(), 0.0);
   return f/m;
@@ -289,30 +294,37 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::Optimization
   }
 
   int m = static_cast<int> (gicp_->tmp_idx_src_->size ());
-  #pragma omp parallel for
-  for(int i = 0; i < m; ++i)
+  // Each thread sums into locals and stores them once, as in operator().
+  #pragma omp parallel
   {
-    // The last coordinate, p_src[3] is guaranteed to be set to 1.0 in registration.hpp
-    pcl::Vector4fMapConst p_src = gicp_->tmp_src_->points[(*gicp_->tmp_idx_src_)[i]].getVector4fMap();
-    // The last coordinate, p_tgt[3] is guaranteed to be set to 1.0 in registration.hpp
-    pcl::Vector4fMapConst p_tgt = gicp_->tmp_tgt_->points[(*gicp_->tmp_idx_tgt_)[i]].getVector4fMap();
+    Eigen::Vector4d g_thread = Eigen::Vector4d::Zero();
+    Eigen::Matrix4d R_thread = Eigen::Matrix4d::Zero();
+    #pragma omp for nowait
+    for(int i = 0; i < m; ++i)
+    {
+      // The last coordinate, p_src[3] is guaranteed to be set to 1.0 in registration.hpp
+      pcl::Vector4fMapConst p_src = gicp_->tmp_src_->points[(*gicp_->tmp_idx_src_)[i]].getVector4fMap();
+      // The last coordinate, p_tgt[3] is guaranteed to be set to 1.0 in registration.hpp
+      pcl::Vector4fMapConst p_tgt = gicp_->tmp_tgt_->points[(*gicp_->tmp_idx_tgt_)[i]].getVector4fMap();
 
-    Eigen::Vector4f pp(transformation_matrix * p_src);
-    // The last coordiante is still guaranteed to be set to 1.0
-    Eigen::Vector4d res(pp[0] - p_tgt[0], pp[1] - p_tgt[1], pp[2] - p_tgt[2], 0.0);
-    // temp = M*res
+      Eigen::Vector4f pp(transformation_matrix * p_src);
+      // The last coordiante is still guaranteed to be set to 1.0
+      Eigen::Vector4d res(pp[0] - p_tgt[0], pp[1] - p_tgt[1], pp[2] - p_tgt[2], 0.0);
+      // temp = M*res
+      Eigen::Matrix4d maha = gicp_->mahalanobis((*gicp_->tmp_idx_src_)[i]).template cast<double>();
 
-	Eigen::Matrix4d maha = gicp_->mahalanobis((*gicp_->tmp_idx_src_)[i]).template cast<double>();
+      Eigen::Vector4d temp(maha * res);
+      // Increment translation gradient
+      // g.head<3> ()+= 2*M*res/num_matches (we postpone 2/num_matches after the loop closes)
+      // Increment rotation gradient
+      pp = gicp_->base_transformation_ * p_src;
 
-    Eigen::Vector4d temp(maha * res);
-    // Increment translation gradient
-    // g.head<3> ()+= 2*M*res/num_matches (we postpone 2/num_matches after the loop closes)
-    // Increment rotation gradient
-    pp = gicp_->base_transformation_ * p_src;
-
-    Eigen::Vector4d p_src3(pp[0], pp[1], pp[2], 0.0);
-    g_array[omp_get_thread_num()] += temp;
-    R_array[omp_get_thread_num()] += p_src3 * temp.transpose();
+      Eigen::Vector4d p_src3(pp[0], pp[1], pp[2], 0.0);
+      g_thread += temp;
+      R_thread += p_src3 * temp.transpose();
+    }
+    g_array[omp_get_thread_num()] = g_thread;
+    R_array[omp_get_thread_num()] = R_thread;
   }
 
   g.setZero();
@@ -396,18 +408,8 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
   double dist_threshold = corr_dist_threshold_ * corr_dist_threshold_;
   pcl::transformPointCloud(output, output, guess);
 
-  std::vector<std::vector<int>> nn_indices_array(omp_get_max_threads());
-  std::vector<std::vector<float>> nn_dists_array(omp_get_max_threads());
-  for (auto& nn_indices : nn_indices_array) { nn_indices.resize(1); }
-  for (auto& nn_dists : nn_dists_array) { nn_dists.resize(1); }
-
   while(!converged_)
   {
-    std::atomic<size_t> cnt;
-    cnt = 0;
-    std::vector<int> source_indices (indices_->size ());
-    std::vector<int> target_indices (indices_->size ());
-
     // guess corresponds to base_t and transformation_ to t
     Eigen::Matrix4d transform_R = Eigen::Matrix4d::Zero ();
     for(size_t i = 0; i < 4; i++)
@@ -417,55 +419,59 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::computeTrans
 
     const Eigen::Matrix3d R = transform_R.topLeftCorner<3,3> ();
 
-    #pragma omp parallel for
-    for (int i = 0; i < N; i++)
+    // Each thread collects its correspondences locally. Taking slots from a shared
+    // counter, and writing them into shared arrays, made the threads contend for the
+    // same cache lines for every correspondence. Sorted by source index, the result
+    // is the same.
+    std::vector<std::vector<std::pair<int, int>>> thread_correspondences(omp_get_max_threads());
+    #pragma omp parallel
     {
-      auto& nn_indices = nn_indices_array[omp_get_thread_num()];
-      auto& nn_dists = nn_dists_array[omp_get_thread_num()];
-
-      PointSource query = output[i];
-      query.getVector4fMap () = transformation_ * query.getVector4fMap ();
-
-      if (!searchForNeighbors (query, nn_indices, nn_dists))
+      std::vector<int> nn_indices(1);
+      std::vector<float> nn_dists(1);
+      std::vector<std::pair<int, int>> correspondences;
+      #pragma omp for nowait
+      for (int i = 0; i < N; i++)
       {
-        PCL_ERROR ("[pcl::%s::computeTransformation] Unable to find a nearest neighbor in the target dataset for point %d in the source!\n", getClassName ().c_str (), (*indices_)[i]);
-        continue;
+        PointSource query = output[i];
+        query.getVector4fMap () = transformation_ * query.getVector4fMap ();
+
+        if (!searchForNeighbors (query, nn_indices, nn_dists))
+        {
+          PCL_ERROR ("[pcl::%s::computeTransformation] Unable to find a nearest neighbor in the target dataset for point %d in the source!\n", getClassName ().c_str (), (*indices_)[i]);
+          continue;
+        }
+
+        // Check if the distance to the nearest neighbor is smaller than the user imposed threshold
+        if (nn_dists[0] < dist_threshold)
+        {
+          const Eigen::Matrix3d &C1 = (*input_covariances_)[i];
+          const Eigen::Matrix3d &C2 = (*target_covariances_)[nn_indices[0]];
+          Eigen::Matrix4f& M_ = mahalanobis_[i];
+          M_.setZero();
+
+          // M = R*C1
+          Eigen::Matrix3d M = R * C1;
+          // temp = M*R' + C2 = R*C1*R' + C2
+          Eigen::Matrix3d temp = M * R.transpose();
+          temp+= C2;
+          // M = temp^-1
+          M = temp.inverse ();
+          M_.block<3, 3>(0, 0) = M.cast<float>();
+          correspondences.emplace_back(static_cast<int> (i), nn_indices[0]);
+        }
       }
-
-      // Check if the distance to the nearest neighbor is smaller than the user imposed threshold
-      if (nn_dists[0] < dist_threshold)
-      {
-        const Eigen::Matrix3d &C1 = (*input_covariances_)[i];
-        const Eigen::Matrix3d &C2 = (*target_covariances_)[nn_indices[0]];
-        Eigen::Matrix4f& M_ = mahalanobis_[i];
-		M_.setZero();
-
-		Eigen::Matrix3d M = M_.block<3, 3>(0, 0).cast<double>();
-        // M = R*C1
-        M = R * C1;
-        // temp = M*R' + C2 = R*C1*R' + C2
-        Eigen::Matrix3d temp = M * R.transpose();
-        temp+= C2;
-        // M = temp^-1
-        M = temp.inverse ();
-		M_.block<3, 3>(0, 0) = M.cast<float>();
-        int c = cnt++;
-        source_indices[c] = static_cast<int> (i);
-        target_indices[c] = nn_indices[0];
-      }
+      thread_correspondences[omp_get_thread_num()] = std::move(correspondences);
     }
-    // Resize to the actual number of valid correspondences
-    source_indices.resize(cnt); target_indices.resize(cnt);
 
-    std::vector<std::pair<int, int>> indices(source_indices.size());
-    for(int i = 0; i<source_indices.size(); i++) {
-      indices[i].first = source_indices[i];
-      indices[i].second = target_indices[i];
-    }
+    std::vector<std::pair<int, int>> indices;
+    for (const auto& correspondences : thread_correspondences)
+      indices.insert(indices.end(), correspondences.begin(), correspondences.end());
 
     std::sort(indices.begin(), indices.end(), [=](const std::pair<int, int>& lhs, const std::pair<int, int>& rhs) { return lhs.first < rhs.first; });
 
-    for(int i = 0; i < source_indices.size(); i++) {
+    std::vector<int> source_indices (indices.size ());
+    std::vector<int> target_indices (indices.size ());
+    for(size_t i = 0; i < indices.size(); i++) {
       source_indices[i] = indices[i].first;
       target_indices[i] = indices[i].second;
     }
