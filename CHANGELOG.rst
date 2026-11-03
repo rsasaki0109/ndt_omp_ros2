@@ -2,8 +2,11 @@
 Changelog for package ndt_omp_ros2
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.2.0 (2026-11-03)
+------------------
+* ``VoxelGridCovariance`` has a new member (the leaf hash table below), so its
+  layout changed: code built against the 0.1.0 headers must be rebuilt. The
+  API is unchanged.
 * GICP aligns faster, with the same result.
 
   * **False sharing:** the cost and gradient summed each thread's share into
@@ -42,6 +45,7 @@ Forthcoming
   ``colcon build`` compiled NDT and GICP without optimization: on a 1500-point
   Autoware Istanbul scan NDT aligned in 250 ms instead of 19 ms (4 threads).
   A build type set by the caller or the buildfarm is kept.
+* Contributors: Ryohei Sasaki
 
 0.1.0 (2026-06-11)
 ------------------
