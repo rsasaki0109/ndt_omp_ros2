@@ -4,6 +4,21 @@ Changelog for package ndt_omp_ros2
 
 Forthcoming
 -----------
+* GICP aligns faster, with the same result.
+
+  * **False sharing:** the cost and gradient summed each thread's share into
+    its own entry of shared vectors (``f_array``, ``g_array``, ``R_array``)
+    for every correspondence. The correspondence search took slots from a
+    shared atomic counter and wrote them into shared arrays. The threads now
+    sum into locals and collect their correspondences locally; sorted by
+    source index, as before, the correspondences are the same.
+  * **One barrier per parallel loop:** BFGS evaluates the cost about 77 times
+    per alignment, so the loops use ``nowait`` and wait only at the end of
+    their parallel region.
+  * **Measured:** on 154 Boreas scans (4 650 points against a 100 m crop of the
+    map thinned to 0.5 m, 4 vCPUs), an alignment takes 10.9-11.6 ms instead of
+    17.9-19.5 ms on 4 threads, and 23.9-24.6 ms instead of 25.7-26.0 ms on 8.
+    The final transforms are bit-identical on all 154 scans.
 * NDT aligns about twice as fast, with the same result.
 
   * **False sharing:** each thread added its score, gradient, Hessian and
