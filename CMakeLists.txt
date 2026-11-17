@@ -15,7 +15,7 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
-find_package(PCL 1.12 REQUIRED)
+find_package(PCL 1.10 REQUIRED)
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 
 ###########

@@ -43,6 +43,7 @@
 
 #include <pcl/registration/icp.h>
 #include <pcl/registration/bfgs.h>
+#include <pcl/pcl_config.h>
 #include <boost/shared_ptr.hpp>
 
 namespace pclomp
@@ -358,7 +359,13 @@ namespace pclomp
         void  df(const Vector6d &x, Vector6d &df) override;
         void fdf(const Vector6d &x, double &f, Vector6d &df) override;
 
-        BFGSSpace::Status checkGradient(const Vector6d &gradient) override {
+        // PCL 1.12 made checkGradient a virtual hook of BFGSDummyFunctor; on
+        // older PCL (1.10 on Foxy) it is a plain member, called directly.
+        BFGSSpace::Status checkGradient(const Vector6d &gradient)
+#if PCL_VERSION_COMPARE(>=, 1, 12, 0)
+          override
+#endif
+        {
           // PCL's default callback returns NotStarted, not a convergence test.
           // Match the translation and rotation tolerances of PCL GICP.
           return gradient.head<3>().norm() < 0.01 && gradient.tail<3>().norm() < 0.01

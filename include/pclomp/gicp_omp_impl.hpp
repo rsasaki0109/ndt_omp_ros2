@@ -227,7 +227,9 @@ pclomp::GeneralizedIterativeClosestPoint<PointSource, PointTarget>::estimateRigi
     {
       break;
     }
-    result = bfgs.testGradient();
+    // Same as bfgs.testGradient() on PCL >= 1.12, which only forwards to the
+    // functor; PCL 1.10 has no such overload.
+    result = functor.checkGradient(bfgs.gradient);
   } while(result == BFGSSpace::Running && inner_iterations_ < max_inner_iterations_);
   if(result == BFGSSpace::NoProgress || result == BFGSSpace::Success || inner_iterations_ == max_inner_iterations_)
   {
