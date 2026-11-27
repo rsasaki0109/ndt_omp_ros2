@@ -39,7 +39,11 @@
 #define PCL_VOXEL_GRID_COVARIANCE_IMPL_OMP_H_
 
 #include <pcl/common/common.h>
-#include <pcl/filters/boost.h>
+// pcl/filters/boost.h, which PCL 1.15 removed, pulled these in.
+#include <boost/mpl/size.hpp>
+#include <boost/random/mersenne_twister.hpp>
+#include <boost/random/normal_distribution.hpp>
+#include <boost/random/variate_generator.hpp>
 #include "voxel_grid_covariance_omp.h"
 #include <Eigen/Dense>
 #include <Eigen/Cholesky>
